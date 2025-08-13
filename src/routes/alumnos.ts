@@ -19,7 +19,6 @@ router.get('/', (req, res) => {
 });
 
 // Buscar alumnos por coincidencia parcial del RUT (para autocompletado)
-// Cambié la ruta para que sea /buscar con query param ?rut=...
 router.get('/buscar', (req, res) => {
   const termino = req.query.rut;
 
@@ -40,6 +39,21 @@ router.get('/buscar', (req, res) => {
     res.json({ success: true, alumnos: results });
   });
 });
+
+router.get('/total', (req, res) => {
+  const query = `
+    SELECT COUNT(*) AS total
+    FROM alumno
+  `;
+
+  db.query(query, (err, results) => {
+    if (err) return res.status(500).json({ error: 'Error al contar alumnos: ' + err.message });
+
+    const rows = results as { total: number }[];
+    res.json({ success: true, total: rows[0].total });
+  });
+});
+
 
 // Ruta para crear un nuevo alumno
 router.post('/crear', (req, res) => {

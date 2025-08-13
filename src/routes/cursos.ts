@@ -14,6 +14,19 @@ router.get('/', (req, res) => {
   });
 });
 
+// Obtener total de cursos
+router.get('/total', (req, res) => {
+  db.query('SELECT COUNT(*) AS total FROM curso', (err, results) => {
+    if (err) {
+      console.error('Error al contar cursos:', err);
+      return res.status(500).json({ success: false, error: 'Error al obtener total de cursos' });
+    }
+    const rows = results as { total: number }[];
+    res.json({ success: true, total: rows[0].total });
+  });
+});
+
+
 // Añadir nuevo curso (POST)
 router.post('/crear-curso', (req, res) => {
   const { nombre_curso, descripcion, costo_curso, codigo_curso, duracion_curso } = req.body;
