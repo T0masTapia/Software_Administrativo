@@ -1,8 +1,10 @@
 import express from 'express';
 import db from '../db';
+import { RowDataPacket } from 'mysql2';
 
 const router = express.Router();
 
+//GETS
 // Obtener todos los alumnos con correo del usuario
 router.get('/', (req, res) => {
   const query = `
@@ -54,7 +56,31 @@ router.get('/total', (req, res) => {
   });
 });
 
+// Obtener cursos de un alumno por RUT
+router.get('/:rut/cursos', (req, res) => {
+  const rut = req.params.rut;
 
+  const query = `
+    SELECT COUNT(*) AS total
+    FROM curso c
+    JOIN alumno_curso ac ON c.id_curso = ac.id_curso
+    JOIN alumno a ON ac.rut_alumno = a.rut
+    WHERE a.rut = ?
+  `;
+
+  db.query(query, [rut], (err, results) => {
+    if (err) {
+      console.error("Error al obtener cursos del alumno:", err);
+      return res.status(500).json({ success: false, error: err.message });
+    }
+
+    const rows = results as RowDataPacket[];
+    res.json({ success: true, total: rows[0].total });
+  });
+});
+
+
+//POSTS
 // Ruta para crear un nuevo alumno
 router.post('/crear', (req, res) => {
   const { rut, nombre_completo, direccion, fono, correo, password } = req.body;
@@ -109,6 +135,7 @@ router.get('/:rut', (req, res) => {
     res.json({ success: true, alumno: rows[0] });
   });
 });
+
 
 
 

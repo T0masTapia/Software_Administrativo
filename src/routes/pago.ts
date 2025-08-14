@@ -5,9 +5,9 @@ import db from '../db';
 const router = express.Router();
 
 router.post('/', (req, res) => {
-    const { id_deuda, monto, tipoPago } = req.body;
+    const { id_deuda, monto, tipoPago, conceptoPago } = req.body;
 
-    if (!id_deuda || !monto || !tipoPago) {
+    if (!id_deuda || !monto || !tipoPago || !conceptoPago) {
         return res.status(400).json({ success: false, error: 'Faltan datos' });
     }
 
@@ -18,11 +18,11 @@ router.post('/', (req, res) => {
     const fecha_pago = new Date();
 
     const sql = `
-        INSERT INTO pago (id_deuda, monto, fecha_pago, tipo_pago)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO pago (id_deuda, monto, fecha_pago, tipo_pago, concepto_pago)
+        VALUES (?, ?, ?, ?, ?)
     `;
 
-    db.query(sql, [id_deuda, monto, fecha_pago, tipoPago], (err, result) => {
+    db.query(sql, [id_deuda, monto, fecha_pago, tipoPago, conceptoPago], (err, result) => {
         if (err) {
             console.error('Error al registrar el pago:', err);
             return res.status(500).json({ success: false, error: 'Error en la base de datos' });
@@ -76,6 +76,7 @@ router.post('/', (req, res) => {
         });
     });
 });
+
 
 
 /**
