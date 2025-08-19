@@ -8,6 +8,7 @@ import asistenciaRoutes from './routes/asistencia';
 import deudaRoutes from './routes/deudas';
 import matriculaRoutes from './routes/matricula';
 import pagoRoutes from './routes/pago';
+import binlookupRoutes from './routes/binlookup';
 
 const app = express();
 app.use(cors());
@@ -22,6 +23,8 @@ app.use('/asistencia', asistenciaRoutes);
 app.use('/deuda', deudaRoutes);
 app.use('/matricula', matriculaRoutes);
 app.use('/pago', pagoRoutes);
+app.use('/binlookup', binlookupRoutes);
+
 
 const PORT = 3001;
 app.listen(PORT, () => {
