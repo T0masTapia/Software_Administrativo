@@ -77,32 +77,6 @@ router.post('/', (req, res) => {
     });
 });
 
-
-
-/**
- * Obtener historial de pagos de un alumno (por RUT)
- * GET /pago/alumno/:rut
- */
-router.get('/alumno/:rut', (req, res) => {
-    const { rut } = req.params;
-
-    const sql = `
-        SELECT p.id_pago, p.id_deuda, p.monto, p.fecha_pago, p.tipo_pago, d.descripcion
-        FROM pago p
-        JOIN deuda d ON p.id_deuda = d.id_deuda
-        WHERE p.rut_alumno = ?
-        ORDER BY p.fecha_pago DESC
-    `;
-
-    db.query(sql, [rut], (err, results) => {
-        if (err) {
-            console.error('Error al obtener pagos:', err);
-            return res.status(500).json({ success: false, error: 'Error en la base de datos' });
-        }
-        res.json({ success: true, pagos: results });
-    });
-});
-
 /**
  * Obtener pagos por deuda específica
  * GET /pago/deuda/:id

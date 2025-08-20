@@ -34,11 +34,11 @@ router.post('/matricular', (req, res) => {
 
       const id_alumno_curso = (resultInsert as any).insertId;
 
-      // Paso 3: Obtener costo del curso
-      const sqlGetCurso = 'SELECT costo_curso FROM curso WHERE id_curso = ?';
+      // Paso 3: Obtener información del curso (costo + nombre)
+      const sqlGetCurso = 'SELECT nombre_curso, costo_curso FROM curso WHERE id_curso = ?';
       db.query(sqlGetCurso, [id_curso], (errCurso, resultsCurso) => {
         if (errCurso) {
-          console.error('Error al obtener costo del curso:', errCurso);
+          console.error('Error al obtener info del curso:', errCurso);
           return res.status(500).json({ success: false, error: 'Error en la base de datos' });
         }
 
@@ -46,27 +46,29 @@ router.post('/matricular', (req, res) => {
           return res.status(400).json({ success: false, error: 'Curso no encontrado' });
         }
 
-        const costoCurso = Number((resultsCurso as any[])[0].costo_curso);
+        const cursoInfo = (resultsCurso as any[])[0];
+        const costoCurso = Number(cursoInfo.costo_curso);
+        const nombreCurso = cursoInfo.nombre_curso;
 
-        // Paso 3.1: Obtener costo de matrícula desde tabla matricula
+        // Paso 3.1: Obtener costo de matrícula
         const sqlGetMatricula = 'SELECT monto FROM matricula LIMIT 1';
         db.query(sqlGetMatricula, (errMat, resultsMat) => {
           if (errMat) {
             console.error('Error al obtener matrícula:', errMat);
             return res.status(500).json({ success: false, error: 'Error al obtener matrícula' });
           }
-          const rows = resultsMat as { monto: number }[];
-          const costoMatricula = Number(rows[0].monto);
 
+          const costoMatricula = Number((resultsMat as any[])[0].monto);
 
           // Paso 4: Calcular monto de deuda según si ya pagó matrícula
           const montoMatriculaAPagar = yaTieneMatricula ? 0 : costoMatricula;
           const montoCursos = costoCurso;
           const montoTotal = montoMatriculaAPagar + montoCursos;
 
+          // Paso 4.1: Descripción usando el nombre del curso
           const descripcion = yaTieneMatricula
-            ? `Deuda por curso ID ${id_curso}`
-            : `Deuda por matrícula y curso ID ${id_curso}`;
+            ? `Pago pendiente por el curso: ${nombreCurso}`
+            : `Pago pendiente de matrícula y curso: ${nombreCurso}`;
 
           const estado = 'pendiente';
           const fechaDeuda = new Date();
@@ -100,6 +102,7 @@ router.post('/matricular', (req, res) => {
   });
 });
 
+
 // GET /alumnoCurso/ (obtener matrículas)
 router.get('/', (req, res) => {
   const sql = `
@@ -122,7 +125,7 @@ router.get('/', (req, res) => {
 router.get('/cursos/:rut_alumno', (req, res) => {
   const { rut_alumno } = req.params;
   const sql = `
-    SELECT c.id_curso, c.nombre_curso, c.descripcion, c.costo_curso, c.codigo_curso, c.duracion_curso, ac.fecha_inscripcion
+    SELECT c.id_curso, c.nombre_curso, c.descripcion, c.costo_curso, c.codigo_curso, c.duracion_curso, c.url_ceforlav, ac.fecha_inscripcion
     FROM curso c
     JOIN alumno_curso ac ON c.id_curso = ac.id_curso
     WHERE ac.rut_alumno = ?
