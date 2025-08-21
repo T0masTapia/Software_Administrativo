@@ -9,6 +9,8 @@ import deudaRoutes from './routes/deudas';
 import matriculaRoutes from './routes/matricula';
 import pagoRoutes from './routes/pago';
 import binlookupRoutes from './routes/binlookup';
+import becasRoutes from './routes/beca';
+
 
 const app = express();
 app.use(cors());
@@ -24,6 +26,7 @@ app.use('/deuda', deudaRoutes);
 app.use('/matricula', matriculaRoutes);
 app.use('/pago', pagoRoutes);
 app.use('/binlookup', binlookupRoutes);
+app.use('/becas', becasRoutes);
 
 
 const PORT = 3001;

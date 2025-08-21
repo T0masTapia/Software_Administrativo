@@ -136,6 +136,90 @@ router.get('/:rut', (req, res) => {
   });
 });
 
+// PATCH /alumnos/:rut
+router.patch('/:rut', async (req, res) => {
+  const rut = req.params.rut;
+  const { nombre, fono, direccion, correo } = req.body;
+
+  try {
+    const updatesAlumno: string[] = [];
+    const valuesAlumno: any[] = [];
+
+    // Campos de la tabla alumno
+    if (nombre) {
+      updatesAlumno.push('nombre_completo = ?');
+      valuesAlumno.push(nombre);
+    }
+    if (fono) {
+      updatesAlumno.push('fono = ?');
+      valuesAlumno.push(fono);
+    }
+    if (direccion) {
+      updatesAlumno.push('direccion = ?');
+      valuesAlumno.push(direccion);
+    }
+
+    // Actualizar tabla alumno si hay campos
+    if (updatesAlumno.length > 0) {
+      const queryAlumno = `UPDATE alumno SET ${updatesAlumno.join(', ')} WHERE rut = ?`;
+      valuesAlumno.push(rut);
+      await new Promise<void>((resolve, reject) => {
+        db.query(queryAlumno, valuesAlumno, (err) => (err ? reject(err) : resolve()));
+      });
+    }
+
+    // Actualizar correo en tabla usuario si viene
+    if (correo) {
+      const queryUsuario = `
+        UPDATE usuario u
+        JOIN alumno a ON a.id_usuario = u.id_usuario
+        SET u.correo = ?
+        WHERE a.rut = ?
+      `;
+      await new Promise<void>((resolve, reject) => {
+        db.query(queryUsuario, [correo, rut], (err) => (err ? reject(err) : resolve()));
+      });
+    }
+
+    res.json({ success: true, message: 'Alumno actualizado correctamente' });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+// Eliminar alumno
+router.delete('/:rut', (req, res) => {
+  const rut = req.params.rut;
+
+  // Primero obtener id_usuario del alumno
+  const obtenerUsuarioId = `SELECT id_usuario FROM alumno WHERE rut = ?`;
+
+  db.query(obtenerUsuarioId, [rut], (err, results) => {
+    if (err) return res.status(500).json({ success: false, error: 'Error al buscar alumno: ' + err.message });
+
+    if ((results as any).length === 0) {
+      return res.status(404).json({ success: false, error: 'Alumno no encontrado' });
+    }
+
+    const id_usuario = (results as any)[0].id_usuario;
+
+    // Eliminar alumno
+    const eliminarAlumno = `DELETE FROM alumno WHERE rut = ?`;
+    db.query(eliminarAlumno, [rut], (err2) => {
+      if (err2) return res.status(500).json({ success: false, error: 'Error al eliminar alumno: ' + err2.message });
+
+      // Eliminar usuario
+      const eliminarUsuario = `DELETE FROM usuario WHERE id_usuario = ?`;
+      db.query(eliminarUsuario, [id_usuario], (err3) => {
+        if (err3) return res.status(500).json({ success: false, error: 'Error al eliminar usuario: ' + err3.message });
+
+        res.json({ success: true, message: 'Alumno eliminado correctamente' });
+      });
+    });
+  });
+});
 
 
 

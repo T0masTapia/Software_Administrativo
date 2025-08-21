@@ -4,6 +4,58 @@ import ExcelJS from 'exceljs';
 
 const router = express.Router();
 
+router.get('/toda', (req, res) => {
+  const sql = `
+    SELECT a.id_curso, al.rut, al.nombre_completo, asis.fecha, asis.estado
+    FROM alumno_curso a
+    JOIN alumno al ON a.rut_alumno = al.rut
+    LEFT JOIN asistencia asis ON asis.rut_alumno = a.rut_alumno AND asis.id_curso = a.id_curso
+    ORDER BY a.id_curso, al.nombre_completo, asis.fecha
+  `;
+  db.query(sql, (err, results) => {
+    if (err) return res.status(500).json({ success: false, error: 'Error al obtener asistencia' });
+    res.json({ success: true, asistencia: results });
+  });
+});
+
+// Obtener asistencia de un curso específico
+router.get('/toda/curso/:idCurso', (req, res) => {
+  const { idCurso } = req.params;
+  const sql = `
+    SELECT a.id_curso, al.rut, al.nombre_completo, asis.fecha, asis.estado
+    FROM alumno_curso a
+    JOIN alumno al ON a.rut_alumno = al.rut
+    LEFT JOIN asistencia asis ON asis.rut_alumno = a.rut_alumno AND asis.id_curso = a.id_curso
+    WHERE a.id_curso = ?
+    ORDER BY al.nombre_completo, asis.fecha
+  `;
+  
+  db.query(sql, [idCurso], (err, results) => {
+    if (err) return res.status(500).json({ success: false, error: 'Error al obtener asistencia' });
+
+    const rows = results as any[];
+    if (rows.length === 0) {
+      return res.json({
+        success: true,
+        message: 'Actualmente no se ha registrado asistencia en este curso',
+        asistencia: []
+      });
+    }
+
+    // Si hay alumnos pero sin registros de asistencia
+    const asistenciaProcesada = rows.map(row => ({
+      id_curso: row.id_curso,
+      rut: row.rut,
+      nombre_completo: row.nombre_completo,
+      fecha: row.fecha || null,
+      estado: row.estado || 'S' // S = Sin marcar
+    }));
+
+    res.json({ success: true, asistencia: asistenciaProcesada });
+  });
+});
+
+
 // Obtener asistencia de un curso en una fecha
 router.get('/:idCurso/:fecha', (req, res) => {
   const { idCurso, fecha } = req.params;

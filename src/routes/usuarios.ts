@@ -1,6 +1,6 @@
 import express from 'express';
 import db from '../db';
-import { ResultSetHeader } from 'mysql2';
+import { ResultSetHeader, RowDataPacket } from 'mysql2';
 
 const router = express.Router();
 
@@ -13,31 +13,68 @@ router.get('/', (req, res) => {
   });
 });
 
-// Crear nuevo usuario
+// Crear un usuario administrativo (admi o subAdmi)
 router.post('/crear-usuario', (req, res) => {
   const { correo, password, tipo_usuario } = req.body;
 
-  // Validaciones
   if (!correo || !password || !tipo_usuario) {
     return res.status(400).json({ success: false, error: 'Faltan datos del usuario' });
   }
 
-  const sql = `
-    INSERT INTO usuario (correo, password, tipo_usuario)
-    VALUES (?, ?, ?)
-  `;
+  if (!['admi', 'subAdmi'].includes(tipo_usuario)) {
+    return res.status(400).json({ success: false, error: 'Tipo de usuario inválido' });
+  }
 
-  db.query(sql, [correo, password, tipo_usuario], (err, result) => {
-    if (err) {
-      console.error('Error al insertar usuario:', err);
-      return res.status(500).json({ success: false, error: 'Error al crear el usuario' });
+  // Primero verificamos si ya existe un usuario con ese correo
+  const checkCorreoSql = 'SELECT COUNT(*) AS total FROM usuario WHERE correo = ?';
+  db.query(checkCorreoSql, [correo], (err, results) => {
+    if (err) return res.status(500).json({ success: false, error: 'Error en la base de datos' });
+
+    const rows = results as RowDataPacket[];
+    if (rows[0].total > 0) {
+      return res.status(400).json({ success: false, error: 'El correo ya está registrado' });
     }
 
-    res.json({
-      success: true,
-      message: 'Usuario creado exitosamente',
-      id_usuario: (result as any).insertId
-    });
+    // Validación: solo puede existir un admi
+    if (tipo_usuario === 'admi') {
+      const checkAdmiSql = 'SELECT COUNT(*) AS total FROM usuario WHERE tipo_usuario = "admi"';
+      db.query(checkAdmiSql, (err2, results2) => {
+        if (err2) return res.status(500).json({ success: false, error: 'Error en la base de datos' });
+
+        const rows2 = results2 as RowDataPacket[];
+        if (rows2[0].total > 0) {
+          return res.status(400).json({ success: false, error: 'Ya existe un usuario admi' });
+        }
+
+        crearUsuario();
+      });
+    } else {
+      crearUsuario();
+    }
+
+    function crearUsuario() {
+      const sql = 'INSERT INTO usuario (correo, password, tipo_usuario) VALUES (?, ?, ?)';
+      db.query(sql, [correo, password, tipo_usuario], (err3, result) => {
+        if (err3) return res.status(500).json({ success: false, error: 'Error al crear usuario' });
+
+        const insertId = (result as ResultSetHeader).insertId;
+        res.json({ success: true, message: 'Usuario creado correctamente', id_usuario: insertId });
+      });
+    }
+  });
+});
+
+
+// Verificar si ya existe un usuario admi
+router.get('/check-admi', (req, res) => {
+  const sql = 'SELECT COUNT(*) AS total FROM usuario WHERE tipo_usuario = "admi"';
+  db.query(sql, (err, results) => {
+    if (err) return res.status(500).json({ success: false, error: 'Error en la base de datos' });
+
+    const rows = results as RowDataPacket[];
+    const admiExiste = rows[0].total > 0;
+
+    res.json({ success: true, admiExiste });
   });
 });
 

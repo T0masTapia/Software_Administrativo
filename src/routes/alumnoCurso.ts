@@ -125,7 +125,7 @@ router.get('/', (req, res) => {
 router.get('/cursos/:rut_alumno', (req, res) => {
   const { rut_alumno } = req.params;
   const sql = `
-    SELECT c.id_curso, c.nombre_curso, c.descripcion, c.costo_curso, c.codigo_curso, c.duracion_curso, c.url_ceforlav, ac.fecha_inscripcion
+    SELECT c.id_curso, c.nombre_curso, c.descripcion, c.costo_curso, c.codigo_curso, c.duracion_curso, c.url_aula, ac.fecha_inscripcion
     FROM curso c
     JOIN alumno_curso ac ON c.id_curso = ac.id_curso
     WHERE ac.rut_alumno = ?
