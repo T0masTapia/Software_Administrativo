@@ -6,9 +6,10 @@ const router = express.Router();
 
 router.get('/toda', (req, res) => {
   const sql = `
-    SELECT a.id_curso, al.rut, al.nombre_completo, asis.fecha, asis.estado
+    SELECT a.id_curso, c.nombre_curso, al.rut, al.nombre_completo, asis.fecha, asis.estado
     FROM alumno_curso a
     JOIN alumno al ON a.rut_alumno = al.rut
+    JOIN curso c ON a.id_curso = c.id_curso
     LEFT JOIN asistencia asis ON asis.rut_alumno = a.rut_alumno AND asis.id_curso = a.id_curso
     ORDER BY a.id_curso, al.nombre_completo, asis.fecha
   `;
@@ -18,13 +19,15 @@ router.get('/toda', (req, res) => {
   });
 });
 
+
 // Obtener asistencia de un curso específico
 router.get('/toda/curso/:idCurso', (req, res) => {
   const { idCurso } = req.params;
   const sql = `
-    SELECT a.id_curso, al.rut, al.nombre_completo, asis.fecha, asis.estado
+    SELECT a.id_curso, c.nombre_curso, al.rut, al.nombre_completo, asis.fecha, asis.estado
     FROM alumno_curso a
     JOIN alumno al ON a.rut_alumno = al.rut
+    JOIN curso c ON a.id_curso = c.id_curso
     LEFT JOIN asistencia asis ON asis.rut_alumno = a.rut_alumno AND asis.id_curso = a.id_curso
     WHERE a.id_curso = ?
     ORDER BY al.nombre_completo, asis.fecha
@@ -42,13 +45,13 @@ router.get('/toda/curso/:idCurso', (req, res) => {
       });
     }
 
-    // Si hay alumnos pero sin registros de asistencia
     const asistenciaProcesada = rows.map(row => ({
       id_curso: row.id_curso,
+      nombre_curso: row.nombre_curso,  // <--- ahora incluimos el nombre del curso
       rut: row.rut,
       nombre_completo: row.nombre_completo,
       fecha: row.fecha || null,
-      estado: row.estado || 'S' // S = Sin marcar
+      estado: row.estado || 'S'
     }));
 
     res.json({ success: true, asistencia: asistenciaProcesada });
@@ -80,6 +83,7 @@ router.get('/:idCurso/:fecha', (req, res) => {
   });
 });
 
+
 // Guardar asistencia (crear o actualizar)
 router.post('/guardar-asistencia', (req, res) => {
   const { id_curso, fecha, asistencias } = req.body; // asistencias = [{ rut_alumno, estado }, ...]
@@ -88,36 +92,32 @@ router.post('/guardar-asistencia', (req, res) => {
     return res.status(400).json({ success: false, error: 'Datos incompletos' });
   }
 
-  // Aquí puedes hacer un proceso para insertar o actualizar cada asistencia
-  // Por simplicidad, ejemplo con MySQL múltiple:
-  
-  const sqlDelete = `DELETE FROM asistencia WHERE id_curso = ? AND fecha = ?`;
-  db.query(sqlDelete, [id_curso, fecha], (err) => {
-    if (err) {
-      console.error('Error al borrar asistencias anteriores:', err);
-      return res.status(500).json({ success: false, error: 'Error al guardar asistencia' });
-    }
+  // Insertar o actualizar cada asistencia
+  const sql = `
+    INSERT INTO asistencia (rut_alumno, id_curso, fecha, estado)
+    VALUES (?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE estado = VALUES(estado)
+  `;
 
-    // Insertar las nuevas asistencias
-    const sqlInsert = `INSERT INTO asistencia (rut_alumno, id_curso, fecha, estado) VALUES ?`;
-
-    const values = asistencias.map(({ rut_alumno, estado }) => [
-      rut_alumno,
-      id_curso,
-      fecha,
-      estado,
-    ]);
-
-    db.query(sqlInsert, [values], (err2) => {
-      if (err2) {
-        console.error('Error al insertar asistencias:', err2);
-        return res.status(500).json({ success: false, error: 'Error al guardar asistencia' });
-      }
-
-      res.json({ success: true, message: 'Asistencia guardada correctamente' });
+  const promises = asistencias.map(({ rut_alumno, estado }) => {
+    return new Promise<void>((resolve, reject) => {
+      db.query(sql, [rut_alumno, id_curso, fecha, estado], (err) => {
+        if (err) return reject(err);
+        resolve();
+      });
     });
   });
+
+  Promise.all(promises)
+    .then(() => {
+      res.json({ success: true, message: 'Asistencia guardada correctamente' });
+    })
+    .catch((err) => {
+      console.error('Error al guardar asistencias:', err);
+      res.status(500).json({ success: false, error: 'Error al guardar asistencia' });
+    });
 });
+
 
 router.get('/descargar/:idCurso/:fecha', async (req, res) => {
   const { idCurso, fecha } = req.params;

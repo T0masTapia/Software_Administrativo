@@ -1,105 +1,103 @@
 // src/routes/alumnoCurso.ts
 import express from 'express';
 import db from '../db';
+import { enviarCorreo } from '../utils/correo';
 
 const router = express.Router();
 
 // POST /alumnoCurso/matricular
-router.post('/matricular', (req, res) => {
-  const { rut_alumno, id_curso } = req.body;
-
-  if (!rut_alumno || !id_curso) {
-    return res.status(400).json({ success: false, error: 'Faltan datos' });
-  }
-
-  const fecha = new Date();
-
-  // Paso 1: Verificar si el alumno ya tiene alguna inscripción previa
-  const sqlCheckMatricula = 'SELECT COUNT(*) as count FROM alumno_curso WHERE rut_alumno = ?';
-  db.query(sqlCheckMatricula, [rut_alumno], (errCheck, resultsCheck) => {
-    if (errCheck) {
-      console.error('Error al verificar matrículas previas:', errCheck);
-      return res.status(500).json({ success: false, error: 'Error en la base de datos' });
+router.post('/matricular', async (req, res) => {
+  try {
+    const { rut_alumno, id_curso } = req.body;
+    if (!rut_alumno || !id_curso) {
+      return res.status(400).json({ success: false, error: 'Faltan datos' });
     }
 
-    const yaTieneMatricula = (resultsCheck as any[])[0].count > 0;
+    const fecha = new Date();
 
-    // Paso 2: Insertar inscripción
-    const sqlInsertMatricula = 'INSERT INTO alumno_curso (rut_alumno, id_curso, fecha_inscripcion) VALUES (?, ?, ?)';
-    db.query(sqlInsertMatricula, [rut_alumno, id_curso, fecha], (errInsert, resultInsert) => {
-      if (errInsert) {
-        console.error('Error al matricular alumno:', errInsert);
-        return res.status(500).json({ success: false, error: 'Error en la base de datos' });
-      }
+    // 1️⃣ Verificar si el alumno ya tiene alguna inscripción previa
+    const [resultsCheck] = await db.promise().query(
+      'SELECT COUNT(*) as count FROM alumno_curso WHERE rut_alumno = ?',
+      [rut_alumno]
+    );
+    const yaTieneMatricula = (resultsCheck as any)[0].count > 0;
 
-      const id_alumno_curso = (resultInsert as any).insertId;
+    // 2️⃣ Insertar inscripción
+    const [resultInsert] = await db.promise().query(
+      'INSERT INTO alumno_curso (rut_alumno, id_curso, fecha_inscripcion) VALUES (?, ?, ?)',
+      [rut_alumno, id_curso, fecha]
+    );
+    const id_alumno_curso = (resultInsert as any).insertId;
 
-      // Paso 3: Obtener información del curso (costo + nombre)
-      const sqlGetCurso = 'SELECT nombre_curso, costo_curso FROM curso WHERE id_curso = ?';
-      db.query(sqlGetCurso, [id_curso], (errCurso, resultsCurso) => {
-        if (errCurso) {
-          console.error('Error al obtener info del curso:', errCurso);
-          return res.status(500).json({ success: false, error: 'Error en la base de datos' });
-        }
+    // 3️⃣ Obtener información del curso (nombre + costo)
+    const [resultsCurso] = await db.promise().query(
+      'SELECT nombre_curso, costo_curso FROM curso WHERE id_curso = ?',
+      [id_curso]
+    );
+    if ((resultsCurso as any[]).length === 0) {
+      return res.status(400).json({ success: false, error: 'Curso no encontrado' });
+    }
+    const cursoInfo = (resultsCurso as any[])[0];
+    const costoCurso = Number(cursoInfo.costo_curso);
+    const nombreCurso = cursoInfo.nombre_curso;
 
-        if ((resultsCurso as any[]).length === 0) {
-          return res.status(400).json({ success: false, error: 'Curso no encontrado' });
-        }
+    // 3.1️⃣ Obtener costo de matrícula
+    const [resultsMat] = await db.promise().query('SELECT monto FROM matricula LIMIT 1');
+    const costoMatricula = Number((resultsMat as any[])[0].monto);
 
-        const cursoInfo = (resultsCurso as any[])[0];
-        const costoCurso = Number(cursoInfo.costo_curso);
-        const nombreCurso = cursoInfo.nombre_curso;
+    // 4️⃣ Calcular monto de deuda según si ya pagó matrícula
+    const montoMatriculaAPagar = yaTieneMatricula ? 0 : costoMatricula;
+    const montoCursos = costoCurso;
+    const montoTotal = montoMatriculaAPagar + montoCursos;
 
-        // Paso 3.1: Obtener costo de matrícula
-        const sqlGetMatricula = 'SELECT monto FROM matricula LIMIT 1';
-        db.query(sqlGetMatricula, (errMat, resultsMat) => {
-          if (errMat) {
-            console.error('Error al obtener matrícula:', errMat);
-            return res.status(500).json({ success: false, error: 'Error al obtener matrícula' });
-          }
+    const descripcion = yaTieneMatricula
+      ? `Pago pendiente por el curso: ${nombreCurso}`
+      : `Pago pendiente de matrícula y curso: ${nombreCurso}`;
+    const estado = 'pendiente';
+    const fechaDeuda = new Date();
 
-          const costoMatricula = Number((resultsMat as any[])[0].monto);
+    // 5️⃣ Insertar deuda
+    const [resultDeuda] = await db.promise().query(
+      `INSERT INTO deuda 
+        (id_alumno_curso, monto, costo_matricula, costo_cursos, descripcion, fecha_deuda, estado)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id_alumno_curso, montoTotal, montoMatriculaAPagar, montoCursos, descripcion, fechaDeuda, estado]
+    );
+    const id_deuda = (resultDeuda as any).insertId;
 
-          // Paso 4: Calcular monto de deuda según si ya pagó matrícula
-          const montoMatriculaAPagar = yaTieneMatricula ? 0 : costoMatricula;
-          const montoCursos = costoCurso;
-          const montoTotal = montoMatriculaAPagar + montoCursos;
+    // 6️⃣ Enviar correo al alumno
+    const [resultsEmail] = await db.promise().query(
+      `SELECT u.correo, a.nombre_completo
+       FROM alumno a
+        JOIN usuario u ON a.id_usuario = u.id_usuario
+        WHERE a.rut = ?`,
+      [rut_alumno]
+    );
+    if ((resultsEmail as any[]).length > 0) {
+      const alumnoCorreo = (resultsEmail as any[])[0].correo;
+      const alumnoNombre = (resultsEmail as any[])[0].nombre_completo;
 
-          // Paso 4.1: Descripción usando el nombre del curso
-          const descripcion = yaTieneMatricula
-            ? `Pago pendiente por el curso: ${nombreCurso}`
-            : `Pago pendiente de matrícula y curso: ${nombreCurso}`;
+      await enviarCorreo(
+        alumnoCorreo,
+        'Confirmación de matrícula',
+        `<p>Hola ${alumnoNombre},</p>
+         <p>Te has matriculado en el curso <strong>${nombreCurso}</strong>.</p>
+         <p>Tu deuda pendiente es <strong>$${montoTotal}</strong>.</p>
+         <p>Gracias por confiar en CFA Educa.</p>`
+      );
+    }
 
-          const estado = 'pendiente';
-          const fechaDeuda = new Date();
-
-          // Paso 5: Insertar deuda
-          const sqlInsertDeuda = `
-            INSERT INTO deuda 
-              (id_alumno_curso, monto, costo_matricula, costo_cursos, descripcion, fecha_deuda, estado)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `;
-          db.query(
-            sqlInsertDeuda,
-            [id_alumno_curso, montoTotal, montoMatriculaAPagar, montoCursos, descripcion, fechaDeuda, estado],
-            (errDeuda, resultDeuda) => {
-              if (errDeuda) {
-                console.error('Error al crear deuda:', errDeuda);
-                return res.status(500).json({ success: false, error: 'Error al crear deuda' });
-              }
-
-              const id_deuda = (resultDeuda as any).insertId;
-              res.json({
-                success: true,
-                message: 'Alumno matriculado y deuda creada exitosamente',
-                id_deuda
-              });
-            }
-          );
-        });
-      });
+    // 7️⃣ Responder al cliente
+    res.json({
+      success: true,
+      message: 'Alumno matriculado, deuda creada y correo enviado exitosamente',
+      id_deuda
     });
-  });
+
+  } catch (error) {
+    console.error('Error en /matricular:', error);
+    res.status(500).json({ success: false, error: 'Error en la base de datos o servidor' });
+  }
 });
 
 
@@ -124,13 +122,28 @@ router.get('/', (req, res) => {
 // GET /alumnoCurso/cursos/:rut_alumno (obtener cursos de un alumno)
 router.get('/cursos/:rut_alumno', (req, res) => {
   const { rut_alumno } = req.params;
+
   const sql = `
-    SELECT c.id_curso, c.nombre_curso, c.descripcion, c.costo_curso, c.codigo_curso, c.duracion_curso, c.url_aula, ac.fecha_inscripcion
+    SELECT 
+      c.id_curso, 
+      c.nombre_curso, 
+      c.descripcion, 
+      c.costo_curso, 
+      c.codigo_curso, 
+      c.duracion_curso, 
+      c.url_aula, 
+      ac.fecha_inscripcion,
+      CASE 
+        WHEN d.estado = 'pendiente' THEN true
+        ELSE false
+      END AS deuda_pendiente
     FROM curso c
     JOIN alumno_curso ac ON c.id_curso = ac.id_curso
+    LEFT JOIN deuda d ON d.id_alumno_curso = ac.id
     WHERE ac.rut_alumno = ?
     ORDER BY ac.fecha_inscripcion DESC
   `;
+
   db.query(sql, [rut_alumno], (err, results) => {
     if (err) {
       console.error('Error al obtener cursos del alumno:', err);
@@ -139,5 +152,6 @@ router.get('/cursos/:rut_alumno', (req, res) => {
     res.json({ success: true, cursos: results });
   });
 });
+
 
 export default router;

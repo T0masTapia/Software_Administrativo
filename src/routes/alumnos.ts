@@ -1,6 +1,7 @@
 import express from 'express';
 import db from '../db';
 import { RowDataPacket } from 'mysql2';
+import bcrypt from 'bcrypt';
 
 const router = express.Router();
 
@@ -80,37 +81,60 @@ router.get('/:rut/cursos', (req, res) => {
 });
 
 
-//POSTS
-// Ruta para crear un nuevo alumno
-router.post('/crear', (req, res) => {
+router.post('/crear', async (req, res) => {
   const { rut, nombre_completo, direccion, fono, correo, password } = req.body;
 
   if (!rut || !nombre_completo || !correo || !password) {
     return res.status(400).json({ error: 'Faltan campos obligatorios' });
   }
 
-  const insertarUsuario = `
-    INSERT INTO usuario (correo, password, tipo_usuario)
-    VALUES (?, ?, 'alumno')
-  `;
+  try {
+    // 1️⃣ Verificar si el correo ya existe
+    const [correoExistente] = await new Promise<any[]>((resolve, reject) => {
+      db.query('SELECT COUNT(*) AS total FROM usuario WHERE correo = ?', [correo], (err, results) => {
+        if (err) reject(err);
+        else resolve(results as any[]);
+      });
+    });
 
-  db.query(insertarUsuario, [correo, password], (err, usuarioResult: any) => {
-    if (err) return res.status(500).json({ error: 'Error al crear usuario: ' + err.message });
+    if (correoExistente.total > 0) {
+      return res.status(400).json({ error: 'El correo ya está registrado' });
+    }
+
+    // 2️⃣ Hashear la contraseña
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // 3️⃣ Insertar en tabla usuario
+    const usuarioResult: any = await new Promise((resolve, reject) => {
+      const sql = `INSERT INTO usuario (correo, password, tipo_usuario) VALUES (?, ?, 'alumno')`;
+      db.query(sql, [correo, hashedPassword], (err, result) => {
+        if (err) reject(err);
+        else resolve(result);
+      });
+    });
 
     const id_usuario = usuarioResult.insertId;
 
-    const insertarAlumno = `
-      INSERT INTO alumno (rut, nombre_completo, direccion, id_usuario, fono)
-      VALUES (?, ?, ?, ?, ?)
-    `;
-
-    db.query(insertarAlumno, [rut, nombre_completo, direccion, id_usuario, fono], (err2) => {
-      if (err2) return res.status(500).json({ error: 'Error al crear alumno: ' + err2.message });
-
-      res.json({ success: true, message: 'Alumno creado correctamente' });
+    // 4️⃣ Insertar en tabla alumno
+    await new Promise((resolve, reject) => {
+      const sql = `
+        INSERT INTO alumno (rut, nombre_completo, direccion, id_usuario, fono)
+        VALUES (?, ?, ?, ?, ?)
+      `;
+      db.query(sql, [rut, nombre_completo, direccion, id_usuario, fono], (err) => {
+        if (err) reject(err);
+        else resolve(null);
+      });
     });
-  });
+
+    res.json({ success: true, message: 'Alumno creado correctamente' });
+
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ success: false, error: 'Error al crear alumno: ' + err.message });
+  }
 });
+
 
 // Obtener alumno por RUT (para mostrar en el panel del alumno logeado)
 router.get('/:rut', (req, res) => {
